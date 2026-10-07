@@ -1,0 +1,7 @@
+data/
+logs/
+hf_cache/
+mlruns/
+*.parquet
+*.npy
+__pycache__/
