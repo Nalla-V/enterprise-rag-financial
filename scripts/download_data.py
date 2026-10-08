@@ -6,6 +6,7 @@ For the 10 chosen companies it fetches:
   2. For each 10-K: the EDGAR HTML version + Financial_Report.xlsx (Excel statements)
 
 Result: a mixed-format corpus (PDF + HTML + XLSX) with matching evaluation questions.
+
 """
 import argparse
 import json
@@ -47,13 +48,22 @@ def download_pdfs(session, docs, out):
             print(f"  pdf  MISS {row.doc_name}")
 
 
+def fiscal_year_of(report_date: str) -> int:
+    """Fiscal year of a period-end date, following FinanceBench's naming.
+    52/53-week filers (e.g. Johnson & Johnson) end their FY2022 on 1 Jan 2023, so a period end
+    in the first week of January belongs to the PREVIOUS year. Late-January year ends
+    (e.g. Best Buy, 28 Jan 2023 = 'fiscal 2023') keep their calendar year."""
+    y, m, d = (int(x) for x in report_date.split("-"))
+    return y - 1 if (m == 1 and d <= 7) else y
+
+
 def download_edgar_10k(session, ticker, cik, year, out):
     """Fetch 10-K HTML + Financial_Report.xlsx whose report date falls in `year`."""
     subs = get(session, f"https://data.sec.gov/submissions/CIK{cik}.json").json()
     rec = subs["filings"]["recent"]
     for form, acc, doc, rdate in zip(rec["form"], rec["accessionNumber"],
                                      rec["primaryDocument"], rec["reportDate"]):
-        if form == "10-K" and rdate.startswith(str(year)):
+        if form == "10-K" and fiscal_year_of(rdate) == year:
             base = f"{SEC}/Archives/edgar/data/{int(cik)}/{acc.replace('-', '')}"
             d = out / ticker / "edgar" / f"{year}_10K"
             d.mkdir(parents=True, exist_ok=True)

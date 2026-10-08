@@ -14,6 +14,7 @@ That single table is what the text-to-SQL tool queries (DuckDB on ALICE, Delta o
 Input : data/processed/chunks.parquet (to find sheets + their filing), data/processed/tables/*/*.csv
 Output: data/processed/fin_facts.parquet
 """
+import json
 import re
 import sys
 from pathlib import Path
@@ -147,9 +148,24 @@ def main():
     out["period_months"] = pd.array([p[1] for p in per], dtype="Int64")
     # 2. fiscal year OF THE COLUMN (a 10-K also has prior-year columns). Companies like J&J or
     #    Best Buy end their year in Jan, so the calendar year in the label != fiscal year.
-    #    Anchor: the latest period end in a filing belongs to that filing's fiscal year.
-    latest = out.groupby("filing_id").period_end.transform("max")
+    #    Anchor = the filing's real fiscal-year end, read from the SEC metadata (meta.json,
+    #    'report_date'). Guessing it from dates inside the sheets failed twice (issues 20, 24):
+    #    detail sheets contain later dates (subsequent events, forward-looking periods).
+    #    Fallback only if meta.json is missing: latest end of a 12-month period.
+    fy_end = {}
+    for t, fy in out[["ticker", "fiscal_year"]].drop_duplicates().itertuples(index=False):
+        meta = config.DATA / "raw" / t / "edgar" / f"{fy}_10K" / "meta.json"
+        if meta.exists():
+            fy_end[(t, fy)] = pd.Timestamp(json.loads(meta.read_text())["report_date"])
+    key = list(zip(out.ticker, out.fiscal_year))
+    from_meta = pd.Series([fy_end.get(k, pd.NaT) for k in key], index=out.index)
+    guess = out.period_end.where(out.period_months == 12).groupby(out.filing_id).transform("max")
+    latest = from_meta.fillna(guess)
     years_back = ((latest - out.period_end).dt.days / 365.25).round()
+    print("fiscal year end per filing (source: SEC meta.json, else guessed):")
+    chk = pd.DataFrame({"filing": out.filing_id, "meta": from_meta, "guess_from_sheets": guess}).drop_duplicates("filing")
+    chk["differs"] = chk.meta.notna() & (chk.meta != chk.guess_from_sheets)
+    print(chk.to_string(index=False), "\n")
     out["period_fiscal_year"] = (out.fiscal_year - years_back).astype("Int64")
     # 3. one comparable scale: money in USD millions
     out["value_kind"] = out.line_item.map(value_kind)
@@ -166,7 +182,7 @@ def main():
     print(f"no units in title : {(out.units == '').mean():.1%} of facts")
     print(f"period date parsed: {out.period_end.notna().mean():.1%} of facts")
     print("value kinds:\n", out.value_kind.value_counts().to_string(), "\n")
-    print("random sample:\n", out.sample(8, random_state=1)[["ticker", "fiscal_year", "statement", "line_item",
+    print("random sample:\n", out.sample(min(8, len(out)), random_state=1)[["ticker", "fiscal_year", "statement", "line_item",
                                                             "period_fiscal_year", "period_months", "value_musd"]]
           .to_string(max_colwidth=40), "\n")
 
