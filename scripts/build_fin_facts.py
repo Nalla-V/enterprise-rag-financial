@@ -57,6 +57,9 @@ SHARE_COUNT_RE = re.compile(r"\bshares\b|number of|weighted[- ]average", re.IGNO
 # property, plant and equipment", "Additions to property and equipment, net of ..."). Map them
 # to one standard name with rules, so the SQL tool can filter `concept = 'capex'`.
 # (concept, statement type, regex on the line item - matched from the START, case-insensitive)
+# 'Net cash provided by / (used in) / provided/(used) by ... <act> activities' in all its spellings
+CASH_ACTIVITY = (r"(?:net |total )?cash (?:\(used\)/|\(used in\)/|\(used by\)/)?(?:provided|generated|flows?|used)(?:/\(used\)|/\(provided\))?"
+                 r"(?: by| from| in| for)?(?: \(used (?:in|for|by)\))?(?:/\(used (?:in|for|by)\))?(?: by)? {act} activities")
 STMT_TYPES = [
     ("income", r"statements? of (?:consolidated )?(?:operations|income|earnings)(?!.*comprehensive)"),
     ("balance", r"balance sheets?|statements? of financial (?:position|condition)"),
@@ -71,8 +74,16 @@ CONCEPTS = [
                                 r"|(?:\(loss\)/)?(?:income|earnings|loss)(?:/\(loss\))? from operations$"),
     ("net_income", "income", r"net (?:\(loss\)/|\(loss\) )?(?:income|earnings|loss)(?: \(loss\)|/\(loss\)|/earnings|/income)?$"
                              r"|net (?:\(loss\)/|\(loss\) )?(?:income|earnings|loss)(?: \(loss\)|/\(loss\)|/earnings|/income)? attributable to (?!non-?controlling)"),
+    ("pretax_income", "income", r"(?:\(loss\)/)?(?:income|earnings|loss)(?:/\(loss\))?[^,]{0,45}? before [^,]{0,30}?tax"
+                                r"|pre-?tax (?:income|earnings|loss|\(loss\)/income)"),
+    ("income_tax_expense", "income", r"\(?provision\)?(?:/\(?benefit\)?)? for (?:income )?tax|\(?benefit\)?(?:/\(?provision\)?)? (?:from|for) (?:income )?tax"
+                                     r"|income tax(?:es)?(?: expense| provision| \(?benefit\)?| \(expense\)/benefit| expense \(benefit\)"
+                                     r"| \(benefit\)/expense| benefit/\(expense\)| \(provision\)/benefit)?$|taxes on income$"),
     ("eps_diluted", "income", r"diluted|(?:net )?(?:income|earnings) per share.*diluted"),
     ("total_assets", "balance", r"total assets$"),
+    ("ppe_net", "balance", r"(?:total )?(?:property|premises),?(?: plant,?)? (?:and|&) equipment(?:[,\s\u2014\u2013-]+net| net)?"
+                           r"(?: of (?:accumulated )?depreciation)?$|net property,? plant"),
+    ("short_term_investments", "balance", r"short-term (?:investments|marketable securities)$|marketable securities$"),
     ("total_liabilities", "balance", r"total liabilities$"),
     ("total_current_assets", "balance", r"total current assets$"),
     ("total_current_liabilities", "balance", r"total current liabilities$"),
@@ -82,10 +93,10 @@ CONCEPTS = [
     ("accounts_payable", "balance", r"accounts payable$|trade (?:and other )?payables$"),
     ("cash", "balance", r"cash and cash equivalents$|cash and due from banks$"),
     ("long_term_debt", "balance", r"long-term (?:debt|borrowings)(?:, net| obligations)?(?: of current portion)?$|long-term debt, excluding current"),
-    ("operating_cash_flow", "cash_flow", r"(?:net )?cash (?:\(used\)/|\(used in\)/|\(used by\)/)?(?:provided|generated|flows?)"
-                                         r"(?: by| from)?(?: \(used (?:in|for|by)\))?(?:/\(used (?:in|for|by)\))? operating activities"
-                                         r"|(?:net )?cash (?:from|provided by) operations$|net cash provided by operating"
-                                         r"|(?:total |net )?cash provided(?:/\(used\))? by operating activities"),
+    ("operating_cash_flow", "cash_flow", CASH_ACTIVITY.format(act="operating")
+                                         + r"|(?:net )?cash (?:from|provided by) operations$"),
+    ("investing_cash_flow", "cash_flow", CASH_ACTIVITY.format(act="investing")),
+    ("financing_cash_flow", "cash_flow", CASH_ACTIVITY.format(act="financing")),
     ("capex", "cash_flow", r"(?:purchases?|payments? (?:for|to acquire)|additions to|capital expenditures? for) (?:of )?"
                            r"(?:property|premises|plant)|capital (?:expenditures?|spending)$"),
     ("depreciation_amortization", "cash_flow", r"depreciation(?:,| and) amortization|depreciation$"),
@@ -140,6 +151,8 @@ def line_priority(line_item, concept):
         score += 2                                    # prefer total over continuing-only
     if concept == "net_income" and "attributable to" not in li:
         score += 1                                    # prefer 'attributable to <company>' over incl. NCI
+    if concept == "ppe_net" and "net" not in li:
+        score += 3                                    # gross PP&E only if no net line exists (e.g. Pfizer)
     if li.startswith("total "):
         score -= 1                                    # 'Total cost of sales' over 'Cost of sales'
     return score + len(li) / 1000                     # tie-break: shorter, more generic label

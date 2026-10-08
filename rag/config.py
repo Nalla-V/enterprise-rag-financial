@@ -19,6 +19,15 @@ COMPANY = {"PEP": "PepsiCo", "AMCR": "Amcor", "JNJ": "Johnson & Johnson", "MMM":
            "AMD": "AMD", "BBY": "Best Buy", "BA": "Boeing", "AXP": "American Express",
            "JPM": "JPMorgan", "PFE": "Pfizer"}
 
+# Company type - lets the answer step judge whether a metric is meaningful
+# (e.g. gross / operating margin and inventory ratios are not used for banks)
+SECTOR = {"PEP": "consumer staples (food and beverages)", "AMCR": "materials (packaging)",
+          "JNJ": "health care (pharma, medtech, consumer health)", "MMM": "industrial conglomerate",
+          "AMD": "semiconductors", "BBY": "consumer electronics retail", "BA": "aerospace and defense",
+          "AXP": "financial institution (card issuer and bank)", "JPM": "financial institution (bank)",
+          "PFE": "pharmaceuticals"}
+FINANCIAL = {"AXP", "JPM"}
+
 # How a user might refer to each company in a question (rule-based query metadata)
 COMPANY_ALIASES = {
     "PEP": ["pepsico", "pepsi"], "AMCR": ["amcor"], "JNJ": ["johnson & johnson", "johnson and johnson", "j&j", "jnj"],
