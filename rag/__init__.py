@@ -1,0 +1,1 @@
+"""Enterprise-style RAG demo over mixed-format SEC filings."""

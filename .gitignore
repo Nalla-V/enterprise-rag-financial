@@ -5,3 +5,4 @@ mlruns/
 *.parquet
 *.npy
 __pycache__/
+mlflow.db
